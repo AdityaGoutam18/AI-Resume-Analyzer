@@ -1,0 +1,1385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Resume Reviewer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"></script>
+    <style>
+        :root {
+            --primary: #4f46e5;
+            --primary-dark: #4338ca;
+            --secondary: #64748b;
+            --light: #f8fafc;
+            --dark: #1e293b;
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            line-height: 1.6;
+            color: var(--dark);
+            background-color: #f1f5f9;
+            margin: 0;
+            padding: 0;
+        }
+        
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 2rem 1rem;
+        }
+        
+        header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        
+        h1 {
+            color: var(--primary);
+            margin-bottom: 0.5rem;
+        }
+        
+        p {
+            margin-top: 0;
+            color: var(--secondary);
+        }
+        
+        .card {
+            background: white;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        
+        .upload-section {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 3rem 1.5rem;
+            border: 2px dashed #cbd5e1;
+            border-radius: 0.5rem;
+            text-align: center;
+            cursor: pointer;
+            transition: border-color 0.3s, background-color 0.3s;
+        }
+        
+        .upload-section:hover {
+            border-color: var(--primary);
+            background-color: rgba(79, 70, 229, 0.05);
+        }
+        
+        .upload-section.dragging {
+            border-color: var(--primary);
+            background-color: rgba(79, 70, 229, 0.1);
+        }
+        
+        .upload-icon {
+            font-size: 2.5rem;
+            color: var(--secondary);
+            margin-bottom: 1rem;
+        }
+        
+        #fileInput {
+            display: none;
+        }
+        
+        .btn {
+            display: inline-block;
+            padding: 0.6rem 1.2rem;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 0.375rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            text-align: center;
+            text-decoration: none;
+            font-size: 0.95rem;
+        }
+        
+        .btn:hover {
+            background: var(--primary-dark);
+        }
+        
+        .btn:disabled {
+            background: var(--secondary);
+            cursor: not-allowed;
+        }
+        
+        .results {
+            display: none;
+            margin-top: 2rem;
+        }
+        
+        .score-section {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+        
+        .score-card {
+            flex: 1;
+            text-align: center;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            background: white;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+            margin: 0 0.5rem;
+        }
+        
+        .score-card:first-child {
+            margin-left: 0;
+        }
+        
+        .score-card:last-child {
+            margin-right: 0;
+        }
+        
+        .score-label {
+            font-size: 0.875rem;
+            color: var(--secondary);
+            margin-bottom: 0.5rem;
+        }
+        
+        .score-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--primary);
+        }
+        
+        .score-value.good {
+            color: var(--success);
+        }
+        
+        .score-value.average {
+            color: var(--warning);
+        }
+        
+        .score-value.poor {
+            color: var(--danger);
+        }
+        
+        .feedback-section h3 {
+            color: var(--primary);
+            border-bottom: 1px solid #e2e8f0;
+            padding-bottom: 0.5rem;
+            margin-top: 2rem;
+        }
+        
+        .feedback-item {
+            margin-bottom: 1.5rem;
+        }
+        
+        .feedback-title {
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+        }
+        
+        .feedback-icon {
+            margin-right: 0.5rem;
+        }
+        
+        .feedback-content {
+            padding-left: 1.5rem;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 2rem;
+        }
+        
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border-left-color: var(--primary);
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .resume-preview {
+            max-height: 300px;
+            overflow-y: auto;
+            padding: 1rem;
+            background: #f8fafc;
+            border-radius: 0.375rem;
+            border: 1px solid #e2e8f0;
+            margin-bottom: 1.5rem;
+            font-size: 0.875rem;
+            white-space: pre-wrap;
+        }
+        
+        #errorMessage {
+            display: none;
+            color: var(--danger);
+            text-align: center;
+            margin: 1rem 0;
+        }
+        
+        .recommendation {
+            background-color: #f0f9ff;
+            border-left: 4px solid #0ea5e9;
+            padding: 1rem;
+            margin: 1rem 0;
+        }
+        
+        .keyword-highlight {
+            background-color: rgba(79, 70, 229, 0.1);
+            padding: 0.125rem 0.25rem;
+            border-radius: 0.25rem;
+            color: var(--primary-dark);
+            font-weight: 500;
+        }
+        
+        .section-title {
+            display: flex;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+        
+        .section-title svg {
+            margin-right: 0.5rem;
+        }
+        
+        footer {
+            text-align: center;
+            margin-top: 3rem;
+            color: var(--secondary);
+            font-size: 0.875rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>AI Resume Reviewer</h1>
+            <p>Upload your resume to get AI-powered feedback and improve your chances of landing that job!</p>
+        </header>
+        
+        <div class="card">
+            <div id="uploadSection" class="upload-section">
+                <div class="upload-icon">📄</div>
+                <h3>Upload your resume (PDF)</h3>
+                <p>Drag and drop your file here or click to browse</p>
+                <input type="file" id="fileInput" accept=".pdf" />
+                <button id="uploadButton" class="btn">Select PDF File</button>
+            </div>
+            <div id="errorMessage"></div>
+        </div>
+        
+        <div id="loading" class="loading card">
+            <div class="spinner"></div>
+            <p>Analyzing your resume... This may take a few moments.</p>
+        </div>
+        
+        <div id="results" class="results">
+            <div class="card">
+                <div class="section-title">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                        <line x1="16" y1="13" x2="8" y2="13"></line>
+                        <line x1="16" y1="17" x2="8" y2="17"></line>
+                        <polyline points="10 9 9 9 8 9"></polyline>
+                    </svg>
+                    <h2>Resume Overview</h2>
+                </div>
+                <div id="resumePreview" class="resume-preview"></div>
+                
+                <div class="score-section">
+                    <div class="score-card">
+                        <div class="score-label">Overall Score</div>
+                        <div id="overallScore" class="score-value">0</div>
+                    </div>
+                    <div class="score-card">
+                        <div class="score-label">Content</div>
+                        <div id="contentScore" class="score-value">0</div>
+                    </div>
+                    <div class="score-card">
+                        <div class="score-label">Skills</div>
+                        <div id="skillsScore" class="score-value">0</div>
+                    </div>
+                    <div class="score-card">
+                        <div class="score-label">Experience</div>
+                        <div id="experienceScore" class="score-value">0</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card feedback-section">
+                <div class="section-title">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                    <h2>Detailed Feedback</h2>
+                </div>
+                <div id="summaryFeedback" class="feedback-item">
+                    <div class="feedback-title">
+                        <span class="feedback-icon">📊</span>
+                        <span>Summary</span>
+                    </div>
+                    <div class="feedback-content" id="summaryContent"></div>
+                </div>
+                
+                <h3>Strengths</h3>
+                <div id="strengthsFeedback"></div>
+                
+                <h3>Areas for Improvement</h3>
+                <div id="improvementsFeedback"></div>
+                
+                <h3>Recommendations</h3>
+                <div id="recommendationsFeedback"></div>
+            </div>
+        </div>
+        
+        <footer>
+            <p>This tool uses AI to analyze your resume content. All data is processed locally in your browser.</p>
+        </footer>
+    </div>
+    
+    <script>
+        // Initialize PDF.js worker
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+        
+        // DOM Elements
+        const uploadSection = document.getElementById('uploadSection');
+        const fileInput = document.getElementById('fileInput');
+        const uploadButton = document.getElementById('uploadButton');
+        const loading = document.getElementById('loading');
+        const results = document.getElementById('results');
+        const resumePreview = document.getElementById('resumePreview');
+        const overallScore = document.getElementById('overallScore');
+        const contentScore = document.getElementById('contentScore');
+        const skillsScore = document.getElementById('skillsScore');
+        const experienceScore = document.getElementById('experienceScore');
+        const summaryContent = document.getElementById('summaryContent');
+        const strengthsFeedback = document.getElementById('strengthsFeedback');
+        const improvementsFeedback = document.getElementById('improvementsFeedback');
+        const recommendationsFeedback = document.getElementById('recommendationsFeedback');
+        const errorMessage = document.getElementById('errorMessage');
+        
+        // Upload event listeners
+        uploadButton.addEventListener('click', () => {
+            fileInput.click();
+        });
+        
+        fileInput.addEventListener('change', (e) => {
+            if (fileInput.files.length > 0) {
+                handleFileUpload();
+            }
+        });
+        
+        // Drag and drop functionality
+        uploadSection.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadSection.classList.add('dragging');
+        });
+        
+        uploadSection.addEventListener('dragleave', () => {
+            uploadSection.classList.remove('dragging');
+        });
+        
+        uploadSection.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadSection.classList.remove('dragging');
+            
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                fileInput.files = files;
+                handleFileUpload();
+            }
+        });
+        
+        async function handleFileUpload() {
+            const file = fileInput.files[0];
+            if (!file) return;
+            
+            // Validate file is PDF
+            if (file.type !== 'application/pdf') {
+                showError('Please upload a PDF file.');
+                return;
+            }
+            
+            try {
+                // Show loading
+                errorMessage.style.display = 'none';
+                loading.style.display = 'block';
+                results.style.display = 'none';
+                
+                // Parse PDF
+                const text = await extractTextFromPDF(file);
+                
+                if (!text || text.trim().length === 0) {
+                    showError('Could not extract text from this PDF. Please ensure it contains readable text.');
+                    loading.style.display = 'none';
+                    return;
+                }
+                
+                // Show preview
+                resumePreview.textContent = text.substring(0, 500) + (text.length > 500 ? '...' : '');
+                
+                // Analyze resume
+                const analysis = analyzeResume(text);
+                
+                // Update UI with results
+                displayResults(analysis);
+                
+                // Hide loading, show results
+                loading.style.display = 'none';
+                results.style.display = 'block';
+                
+            } catch (error) {
+                console.error('Error processing file:', error);
+                showError('An error occurred while processing your file. Please try again.');
+                loading.style.display = 'none';
+            }
+        }
+        
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.style.display = 'block';
+        }
+        
+        async function extractTextFromPDF(file) {
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            
+            let fullText = '';
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const textContent = await page.getTextContent();
+                const pageText = textContent.items.map(item => item.str).join(' ');
+                fullText += pageText + '\n';
+            }
+            
+            return fullText;
+        }
+        
+        function analyzeResume(text) {
+            // Sections identification
+            const sections = identifySections(text);
+            
+            // Extract information
+            const skills = extractSkills(text);
+            const experience = extractExperience(text);
+            const education = extractEducation(text);
+            const contactInfo = extractContactInfo(text);
+            
+            // Calculate scores
+            const skillsScoreValue = calculateSkillsScore(skills);
+            const experienceScoreValue = calculateExperienceScore(experience);
+            const contentScoreValue = calculateContentScore(text, sections);
+            const overallScoreValue = Math.round((skillsScoreValue + experienceScoreValue + contentScoreValue) / 3);
+            
+            // Generate feedback
+            const strengths = identifyStrengths(text, skills, experience, education, contentScoreValue);
+            const improvements = identifyImprovements(text, skills, experience, education, contentScoreValue);
+            const recommendations = generateRecommendations(text, skills, experience, education, contentScoreValue);
+            
+            // Return analysis object
+            return {
+                text,
+                sections,
+                skills,
+                experience,
+                education,
+                contactInfo,
+                scores: {
+                    overall: overallScoreValue,
+                    content: contentScoreValue,
+                    skills: skillsScoreValue,
+                    experience: experienceScoreValue
+                },
+                feedback: {
+                    summary: generateSummary(overallScoreValue, skills, experience),
+                    strengths,
+                    improvements,
+                    recommendations
+                }
+            };
+        }
+        
+        function identifySections(text) {
+            const sections = {};
+            
+            // Common section headers
+            const sectionHeaders = [
+                'experience', 'work experience', 'employment history', 'professional experience',
+                'education', 'academic background', 'qualifications',
+                'skills', 'technical skills', 'core competencies', 'expertise',
+                'projects', 'portfolio', 'work',
+                'certifications', 'certificates', 'licenses',
+                'summary', 'professional summary', 'objective', 'profile',
+                'awards', 'honors', 'achievements',
+                'publications', 'research', 'papers',
+                'languages', 'language proficiency',
+                'volunteer', 'community service', 'extracurricular'
+            ];
+            
+            const lines = text.split('\n');
+            let currentSection = 'header';
+            sections[currentSection] = [];
+            
+            for (const line of lines) {
+                const cleanLine = line.trim().toLowerCase();
+                
+                // Check if this line is a section header
+                const foundHeader = sectionHeaders.find(header => 
+                    cleanLine.includes(header) && 
+                    cleanLine.length < 50 &&  // To avoid misinterpreting normal text
+                    (cleanLine === header || 
+                     cleanLine.startsWith(header + ':') || 
+                     cleanLine.startsWith(header + ' ') ||
+                     cleanLine.endsWith(' ' + header))
+                );
+                
+                if (foundHeader) {
+                    currentSection = foundHeader;
+                    sections[currentSection] = [];
+                } else {
+                    sections[currentSection].push(line);
+                }
+            }
+            
+            return sections;
+        }
+        
+        function extractSkills(text) {
+            // Common technical skills
+            const technicalSkills = [
+                'python', 'java', 'javascript', 'typescript', 'c++', 'c#', 'ruby', 'php', 'swift', 'kotlin',
+                'react', 'angular', 'vue', 'node.js', 'express', 'django', 'flask', 'spring', 'rails',
+                'html', 'css', 'sass', 'less', 'bootstrap', 'tailwind', 'jquery',
+                'sql', 'mysql', 'postgresql', 'mongodb', 'firebase', 'oracle', 'dynamodb', 'redis',
+                'aws', 'azure', 'gcp', 'docker', 'kubernetes', 'jenkins', 'terraform', 'ansible',
+                'git', 'github', 'gitlab', 'bitbucket', 'jira', 'confluence', 'trello',
+                'machine learning', 'artificial intelligence', 'data science', 'deep learning', 'nlp',
+                'tensorflow', 'pytorch', 'scikit-learn', 'pandas', 'numpy', 'matplotlib',
+                'agile', 'scrum', 'kanban', 'waterfall', 'lean', 'devops', 'ci/cd'
+            ];
+            
+            // Common soft skills
+            const softSkills = [
+                'communication', 'teamwork', 'leadership', 'problem solving', 'critical thinking',
+                'time management', 'project management', 'creativity', 'flexibility', 'adaptability',
+                'detail oriented', 'analytical', 'customer service', 'negotiation', 'presentation',
+                'decision making', 'conflict resolution', 'emotional intelligence', 'mentoring'
+            ];
+            
+            const allSkills = [...technicalSkills, ...softSkills];
+            const foundSkills = {
+                technical: [],
+                soft: [],
+                other: []
+            };
+            
+            const textLower = text.toLowerCase();
+            
+            // Extract technical skills
+            for (const skill of technicalSkills) {
+                if (textLower.includes(skill)) {
+                    foundSkills.technical.push(skill);
+                }
+            }
+            
+            // Extract soft skills
+            for (const skill of softSkills) {
+                if (textLower.includes(skill)) {
+                    foundSkills.soft.push(skill);
+                }
+            }
+            
+            // Look for skill sections and extract additional skills
+            const skillSectionIdentifiers = ['skills', 'expertise', 'competencies', 'proficiencies'];
+            
+            const lines = text.split('\n');
+            let inSkillSection = false;
+            
+            for (const line of lines) {
+                const lineLower = line.toLowerCase().trim();
+                
+                // Check if this line is a skill section header
+                if (skillSectionIdentifiers.some(id => lineLower.includes(id) && lineLower.length < 50)) {
+                    inSkillSection = true;
+                    continue;
+                }
+                
+                // If we're in a skill section, try to extract skills
+                if (inSkillSection) {
+                    // Skip empty lines
+                    if (lineLower.length < 2) continue;
+                    
+                    // End of skill section if we encounter another section heading
+                    if (lineLower.endsWith(':') || (lineLower.length < 30 && lineLower.toUpperCase() === lineLower)) {
+                        inSkillSection = false;
+                        continue;
+                    }
+                    
+                    // Process skills in this line
+                    const potentialSkills = lineLower.split(/[,•|\/]/);
+                    
+                    for (const potentialSkill of potentialSkills) {
+                        const cleanSkill = potentialSkill.trim();
+                        
+                        // Skip if too short or already found
+                        if (cleanSkill.length < 2) continue;
+                        if (foundSkills.technical.includes(cleanSkill) || 
+                            foundSkills.soft.includes(cleanSkill) || 
+                            foundSkills.other.includes(cleanSkill)) continue;
+                        
+                        // Check if it's already in our known skills
+                        if (technicalSkills.includes(cleanSkill)) {
+                            foundSkills.technical.push(cleanSkill);
+                        } else if (softSkills.includes(cleanSkill)) {
+                            foundSkills.soft.push(cleanSkill);
+                        } else {
+                            foundSkills.other.push(cleanSkill);
+                        }
+                    }
+                }
+            }
+            
+            return foundSkills;
+        }
+        
+        function extractExperience(text) {
+            const experiences = [];
+            const textLower = text.toLowerCase();
+            
+            // Identify the experience section
+            const experienceSectionIdentifiers = ['experience', 'work experience', 'employment', 'work history'];
+            let experienceSection = '';
+            
+            for (const identifier of experienceSectionIdentifiers) {
+                if (textLower.includes(identifier)) {
+                    const startIndex = textLower.indexOf(identifier);
+                    const endIndex = textLower.indexOf('education', startIndex);
+                    
+                    if (endIndex > startIndex) {
+                        experienceSection = text.substring(startIndex, endIndex);
+                    } else {
+                        // If education section not found, take the rest of the text
+                        experienceSection = text.substring(startIndex);
+                    }
+                    
+                    break;
+                }
+            }
+            
+            if (!experienceSection) return experiences;
+            
+            // Split into potential job entries
+            const lines = experienceSection.split('\n').filter(line => line.trim().length > 0);
+            
+            let currentJob = null;
+            let jobDescription = [];
+            
+            for (const line of lines) {
+                const lineLower = line.toLowerCase();
+                
+                // Skip section headers
+                if (experienceSectionIdentifiers.some(id => lineLower.includes(id) && lineLower.length < 50)) {
+                    continue;
+                }
+                
+                // Check for date patterns indicating job entry
+                const datePatterns = [
+                    /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]* \d{4}\b/i, // Month Year
+                    /\b\d{1,2}\/\d{4}\b/, // MM/YYYY
+                    /\b\d{4}\s*[-–—]\s*\d{4}\b/, // YYYY-YYYY
+                    /\b\d{4}\s*[-–—]\s*(present|current|now)\b/i, // YYYY-Present
+                    /\b(20|19)\d{2}\b/ // Just year (20XX or 19XX)
+                ];
+                
+                const hasDatePattern = datePatterns.some(pattern => pattern.test(lineLower));
+                
+                // If line contains company or job title indicators
+                const companyIndicators = ['inc', 'llc', 'corporation', 'corp', 'company', 'co', 'ltd'];
+                const hasCompanyIndicator = companyIndicators.some(indicator => 
+                    lineLower.includes(' ' + indicator + ' ') || 
+                    lineLower.endsWith(' ' + indicator) ||
+                    lineLower.includes(' ' + indicator + ',')
+                );
+                
+                // Check for job title patterns
+                const jobTitleIndicators = [
+                    'engineer', 'developer', 'manager', 'director', 'specialist',
+                    'analyst', 'assistant', 'associate', 'consultant', 'coordinator',
+                    'designer', 'administrator', 'executive', 'officer', 'representative',
+                    'lead', 'head', 'chief', 'senior', 'junior', 'intern'
+                ];
+                
+                const hasJobTitle = jobTitleIndicators.some(title => lineLower.includes(title));
+                
+                // If this looks like a new job entry
+                if ((hasDatePattern && (hasCompanyIndicator || hasJobTitle)) || 
+                    (line.length < 100 && (hasCompanyIndicator && hasJobTitle))) {
+                    
+                    // Save previous job if exists
+                    if (currentJob) {
+                        currentJob.description = jobDescription.join('\n');
+                        experiences.push(currentJob);
+                    }
+                    
+                    // Start new job
+                    currentJob = {
+                        title: line,
+                        description: ''
+                    };
+                    
+                    jobDescription = [];
+                } else if (currentJob) {
+                    // Add to current job description
+                    jobDescription.push(line);
+                }
+            }
+            
+            // Add last job if exists
+            if (currentJob) {
+                currentJob.description = jobDescription.join('\n');
+                experiences.push(currentJob);
+            }
+            
+            return experiences;
+        }
+        
+        function extractEducation(text) {
+            const educationInfo = {
+                degrees: [],
+                institutions: [],
+                years: []
+            };
+            
+            const textLower = text.toLowerCase();
+            
+            // Find education section
+            const educationSectionIdentifiers = ['education', 'academic', 'qualifications', 'degree'];
+            let educationSection = '';
+            
+            for (const identifier of educationSectionIdentifiers) {
+                if (textLower.includes(identifier)) {
+                    const startIndex = textLower.indexOf(identifier);
+                    let endIndex = text.length;
+                    
+                    // Try to find the end of the education section
+                    const possibleNextSections = ['experience', 'skills', 'projects', 'certifications', 'awards'];
+                    
+                    for (const nextSection of possibleNextSections) {
+                        const nextSectionIndex = textLower.indexOf(nextSection, startIndex + identifier.length);
+                        if (nextSectionIndex > startIndex && nextSectionIndex < endIndex) {
+                            endIndex = nextSectionIndex;
+                        }
+                    }
+                    
+                    educationSection = text.substring(startIndex, endIndex);
+                    break;
+                }
+            }
+            
+            if (!educationSection) return educationInfo;
+            
+            // Extract degrees
+            const degreeTypes = [
+                'bachelor', 'master', 'doctor', 'phd', 'mba', 'bs', 'ba', 'bsc', 'msc', 'ma', 
+                'associate', 'b\\.s\\.', 'b\\.a\\.', 'm\\.s\\.', 'm\\.a\\.', 'ph\\.d\\.'
+            ];
+            
+            const degreeRegex = new RegExp(`\\b(${degreeTypes.join('|')})\\w*\\b`, 'gi');
+            const degreeMatches = educationSection.match(degreeRegex);
+            
+            if (degreeMatches) {
+                educationInfo.degrees = degreeMatches.map(match => match.trim());
+            }
+            
+            // Extract institutions
+            const commonInstitutions = [
+                'university', 'college', 'institute', 'school', 'academy'
+            ];
+            
+            const lines = educationSection.split('\n');
+            
+            for (const line of lines) {
+                for (const institution of commonInstitutions) {
+                    if (line.toLowerCase().includes(institution)) {
+                        // Extract the full institution name
+                        const startIdx = line.toLowerCase().indexOf(institution);
+                        let endIdx = line.indexOf(',', startIdx);
+                        if (endIdx === -1) endIdx = line.indexOf('\n', startIdx);
+                        if (endIdx === -1) endIdx = line.length;
+                        
+                        // Look backwards to get the full name
+                        let startIdxFull = startIdx;
+                        while (startIdxFull > 0 && line[startIdxFull-1] !== ',' && line[startIdxFull-1] !== '\n') {
+                            startIdxFull--;
+                        }
+                        
+                        const institutionName = line.substring(startIdxFull, endIdx).trim();
+                        if (institutionName && !educationInfo.institutions.includes(institutionName)) {
+                            educationInfo.institutions.push(institutionName);
+                        }
+                    }
+                }
+                
+                // Look for years (graduation dates)
+                const yearRegex = /\b(19|20)\d{2}\b/g;
+                const yearMatches = line.match(yearRegex);
+                
+                if (yearMatches) {
+                    for (const year of yearMatches) {
+                        if (!educationInfo.years.includes(year)) {
+                            educationInfo.years.push(year);
+                        }
+                    }
+                }
+            }
+            
+            return educationInfo;
+        }
+        
+        function extractContactInfo(text) {
+            const contactInfo = {
+                email: null,
+                phone: null,
+                linkedin: null,
+                github: null,
+                website: null
+            };
+            
+            // Extract email
+            const emailRegex = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/;
+            const emailMatch = text.match(emailRegex);
+            if (emailMatch) {
+                contactInfo.email = emailMatch[0];
+            }
+            
+            // Extract phone
+            const phoneRegex = /\b(\+\d{1,3}[ -]?)?\(?\d{3}\)?[ -]?\d{3}[ -]?\d{4}\b/;
+            const phoneMatch = text.match(phoneRegex);
+            if (phoneMatch) {
+                contactInfo.phone = phoneMatch[0];
+            }
+            
+            // Extract LinkedIn
+            const linkedinRegex = /\b(linkedin\.com\/in\/[a-zA-Z0-9_-]+)\b/i;
+            const linkedinMatch = text.match(linkedinRegex);
+            if (linkedinMatch) {
+                contactInfo.linkedin = linkedinMatch[0];
+            }
+            
+            // Extract GitHub
+            const githubRegex = /\b(github\.com\/[a-zA-Z0-9_-]+)\b/i;
+            const githubMatch = text.match(githubRegex);
+            if (githubMatch) {
+                contactInfo.github = githubMatch[0];
+            }
+            
+            // Extract website
+            const websiteRegex = /\b(https?:\/\/[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?:\/[^\s]*)?)\b/i;
+            const websiteMatch = text.match(websiteRegex);
+            if (websiteMatch && 
+                !websiteMatch[0].includes('linkedin.com') && 
+                !websiteMatch[0].includes('github.com')) {
+                contactInfo.website = websiteMatch[0];
+            }
+            
+            return contactInfo;
+        }
+        
+        function calculateSkillsScore(skills) {
+            // Count total skills
+            const totalSkills = skills.technical.length + skills.soft.length + skills.other.length;
+            
+            // Technical skills are weighted more heavily
+            const technicalWeight = 1.5;
+            const softWeight = 1.0;
+            const otherWeight = 0.5;
+            
+            // Calculate weighted score
+            const weightedScore = 
+                (skills.technical.length * technicalWeight) + 
+                (skills.soft.length * softWeight) + 
+                (skills.other.length * otherWeight);
+            
+            // Base score on quantity and balance
+            let score = 0;
+            
+            // Quantity scoring
+            if (totalSkills >= 20) score = 90;
+            else if (totalSkills >= 15) score = 80;
+            else if (totalSkills >= 10) score = 70;
+            else if (totalSkills >= 7) score = 60;
+            else if (totalSkills >= 5) score = 50;
+            else if (totalSkills >= 3) score = 40;
+            else score = 30;
+            
+            // Balance bonus (having both technical and soft skills)
+            if (skills.technical.length > 0 && skills.soft.length > 0) {
+                score += 5;
+            }
+            
+            // Cap at 100
+            return Math.min(100, score);
+        }
+        
+        function calculateExperienceScore(experiences) {
+            if (!experiences || experiences.length === 0) {
+                return 30; // Base score for no experience
+            }
+            
+            let score = 0;
+            
+            // Quantity of experience
+            if (experiences.length >= 5) score = 80;
+            else if (experiences.length >= 3) score = 70;
+            else if (experiences.length >= 2) score = 60;
+            else score = 50;
+            
+            // Quality of descriptions
+            let totalDescriptionLength = 0;
+            let hasActionVerbs = false;
+            let hasMetrics = false;
+            
+            const actionVerbs = [
+                'achieved', 'improved', 'developed', 'managed', 'created', 'reduced', 'increased',
+                'implemented', 'led', 'coordinated', 'designed', 'launched', 'built', 'delivered',
+                'generated', 'negotiated', 'organized', 'produced', 'resolved', 'streamlined'
+            ];
+            
+            const metricPatterns = [
+                /\d+%/, // Percentages
+                /\$\d+/, // Dollar amounts
+                /\d+ (million|thousand|billion)/, // Large numbers
+                /increased|decreased|reduced|improved|grew|expanded|enhanced/i // Growth words
+            ];
+            
+            for (const exp of experiences) {
+                totalDescriptionLength += exp.description.length;
+                
+                // Check for action verbs
+                if (!hasActionVerbs) {
+                    hasActionVerbs = actionVerbs.some(verb => 
+                        exp.description.toLowerCase().includes(verb)
+                    );
+                }
+                
+                // Check for metrics
+                if (!hasMetrics) {
+                    hasMetrics = metricPatterns.some(pattern => 
+                        pattern.test(exp.description)
+                    );
+                }
+            }
+            
+            // Average description length per job
+            const avgDescLength = totalDescriptionLength / experiences.length;
+            
+            // Bonus for detailed descriptions
+            if (avgDescLength > 400) score += 15;
+            else if (avgDescLength > 250) score += 10;
+            else if (avgDescLength > 150) score += 5;
+            
+            // Bonus for action verbs and metrics
+            if (hasActionVerbs) score += 5;
+            if (hasMetrics) score += 10;
+            
+            // Cap at 100
+            return Math.min(100, score);
+        }
+        
+        function calculateContentScore(text, sections) {
+            let score = 50; // Base score
+            
+            // Check for essential sections
+            const essentialSections = [
+                'experience', 'work experience', 'employment history', 'professional experience',
+                'education', 'skills', 'technical skills', 'summary', 'professional summary', 'objective'
+            ];
+            
+            let sectionCount = 0;
+            for (const section in sections) {
+                if (essentialSections.includes(section.toLowerCase())) {
+                    sectionCount++;
+                }
+            }
+            
+            // Score based on sections present
+            if (sectionCount >= 4) score += 20;
+            else if (sectionCount >= 3) score += 15;
+            else if (sectionCount >= 2) score += 10;
+            else if (sectionCount >= 1) score += 5;
+            
+            // Check for contact information
+            const contactPatterns = [
+                /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/, // Email
+                /\b(\+\d{1,3}[ -]?)?\(?\d{3}\)?[ -]?\d{3}[ -]?\d{4}\b/ // Phone
+            ];
+            
+            let contactScore = 0;
+            for (const pattern of contactPatterns) {
+                if (pattern.test(text)) {
+                    contactScore += 5;
+                }
+            }
+            
+            score += contactScore;
+            
+            // Length check
+            const wordCount = text.split(/\s+/).length;
+            
+            if (wordCount > 600) score += 10;
+            else if (wordCount > 400) score += 5;
+            else if (wordCount < 200) score -= 10;
+            
+            // Check for ATS-friendly formatting
+            const hasCleanFormatting = !text.includes('•') && !text.includes('★');
+            if (hasCleanFormatting) score += 5;
+            
+            // Cap at 100
+            return Math.min(100, score);
+        }
+        
+        function generateSummary(overallScore, skills, experience) {
+            let summary = '';
+            
+            if (overallScore >= 85) {
+                summary = `<strong>Excellent resume!</strong> You have a well-structured document with strong experience and a good balance of skills. Your resume stands out from the competition and should get attention from recruiters.`;
+            } else if (overallScore >= 70) {
+                summary = `<strong>Good resume.</strong> You have a solid foundation with relevant experience and skills. With a few targeted improvements, you can make your resume even more impressive.`;
+            } else if (overallScore >= 50) {
+                summary = `<strong>Average resume.</strong> While you have some good content, your resume needs improvement in several areas to stand out in a competitive job market.`;
+            } else {
+                summary = `<strong>Needs significant improvement.</strong> Your resume requires substantial work to meet industry standards. Follow our recommendations to increase your chances of getting interviews.`;
+            }
+            
+            return summary;
+        }
+        
+        function identifyStrengths(text, skills, experience, education, contentScore) {
+            const strengths = [];
+            
+            // Skills strengths
+            if (skills.technical.length >= 8) {
+                strengths.push({
+                    title: 'Strong Technical Skill Set',
+                    content: `You've listed ${skills.technical.length} technical skills, showing a diverse range of expertise.`
+                });
+            }
+            
+            if (skills.soft.length >= 3) {
+                strengths.push({
+                    title: 'Good Balance of Soft Skills',
+                    content: `Including soft skills like ${skills.soft.slice(0, 3).join(', ')} shows you understand the importance of workplace dynamics and communication.`
+                });
+            }
+            
+            // Experience strengths
+            if (experience.length >= 3) {
+                strengths.push({
+                    title: 'Solid Work History',
+                    content: `With ${experience.length} positions listed, you demonstrate a progressive career path with valuable experience.`
+                });
+            }
+            
+            const actionVerbs = [
+                'achieved', 'improved', 'developed', 'managed', 'created', 'reduced', 'increased',
+                'implemented', 'led', 'coordinated', 'designed', 'launched', 'built'
+            ];
+            
+            let hasActionVerbs = false;
+            for (const exp of experience) {
+                if (actionVerbs.some(verb => exp.description.toLowerCase().includes(verb))) {
+                    hasActionVerbs = true;
+                    break;
+                }
+            }
+            
+            if (hasActionVerbs) {
+                strengths.push({
+                    title: 'Achievement-Focused Descriptions',
+                    content: 'You effectively use action verbs to highlight your accomplishments rather than just listing responsibilities.'
+                });
+            }
+            
+            // Content strengths
+            if (contentScore >= 70) {
+                strengths.push({
+                    title: 'Well-Structured Format',
+                    content: 'Your resume has a clean, organized structure with clear sections that make it easy for recruiters to scan.'
+                });
+            }
+            
+            // Education strengths
+            if (education.degrees.length > 0) {
+                strengths.push({
+                    title: 'Relevant Education',
+                    content: `Your ${education.degrees[0]} degree provides a solid foundation for your career.`
+                });
+            }
+            
+            // If no strengths identified, add a generic one
+            if (strengths.length === 0) {
+                strengths.push({
+                    title: 'Resume Foundation',
+                    content: 'You have created a resume with the basic essential information, which provides a starting point for improvement.'
+                });
+            }
+            
+            return strengths;
+        }
+        
+        function identifyImprovements(text, skills, experience, education, contentScore) {
+            const improvements = [];
+            
+            // Skills improvements
+            if (skills.technical.length < 5) {
+                improvements.push({
+                    title: 'Expand Technical Skills',
+                    content: 'Your resume would benefit from listing more relevant technical skills that showcase your expertise in your field.'
+                });
+            }
+            
+            if (skills.soft.length < 3) {
+                improvements.push({
+                    title: 'Add Soft Skills',
+                    content: 'Including soft skills like communication, teamwork, and problem-solving would provide a more well-rounded view of your capabilities.'
+                });
+            }
+            
+            // Experience improvements
+            if (experience.length === 0) {
+                improvements.push({
+                    title: 'Add Work Experience',
+                    content: "Your resume lacks professional experience. Consider adding internships, volunteer work, or relevant projects if you're new to the workforce."
+                });
+            } else {
+                let shortDescriptions = 0;
+                for (const exp of experience) {
+                    if (exp.description.length < 100) {
+                        shortDescriptions++;
+                    }
+                }
+                
+                if (shortDescriptions > 0) {
+                    improvements.push({
+                        title: 'Expand Job Descriptions',
+                        content: 'Some of your work experience entries are too brief. Add more details about your responsibilities and achievements in each role.'
+                    });
+                }
+                
+                const metricPatterns = [/\d+%/, /\$\d+/, /\d+ (million|thousand|billion)/];
+                let hasMetrics = false;
+                
+                for (const exp of experience) {
+                    if (metricPatterns.some(pattern => pattern.test(exp.description))) {
+                        hasMetrics = true;
+                        break;
+                    }
+                }
+                
+                if (!hasMetrics) {
+                    improvements.push({
+                        title: 'Add Quantifiable Achievements',
+                        content: 'Include specific numbers and metrics to demonstrate your impact (e.g., "increased sales by 20%" or "managed a team of 15 people").'
+                    });
+                }
+            }
+            
+            // Content improvements
+            if (contentScore < 60) {
+                improvements.push({
+                    title: 'Improve Overall Structure',
+                    content: 'Your resume needs better organization with clear section headings and consistent formatting throughout.'
+                });
+            }
+            
+            const wordCount = text.split(/\s+/).length;
+            if (wordCount < 300) {
+                improvements.push({
+                    title: 'Add More Content',
+                    content: 'Your resume is too brief. Aim for a more comprehensive document that fully showcases your qualifications.'
+                });
+            } else if (wordCount > 800) {
+                improvements.push({
+                    title: 'Be More Concise',
+                    content: 'Your resume is quite lengthy. Trim content to focus on the most relevant and recent information to improve readability.'
+                });
+            }
+            
+            // Education improvements
+            if (education.degrees.length === 0 && education.institutions.length === 0) {
+                improvements.push({
+                    title: 'Add Education Section',
+                    content: 'Include your educational background with degrees, institutions, and graduation dates.'
+                });
+            }
+            
+            // If no improvements identified, add a generic one
+            if (improvements.length === 0) {
+                improvements.push({
+                    title: 'Further Polish Your Content',
+                    content: 'While your resume is strong, consider having it reviewed by someone in your industry for field-specific feedback.'
+                });
+            }
+            
+            return improvements;
+        }
+        
+        function generateRecommendations(text, skills, experience, education, contentScore) {
+            const recommendations = [];
+            
+            // Tailoring recommendation
+            recommendations.push({
+                title: 'Tailor Your Resume for Each Job',
+                content: 'Customize your resume for each application by highlighting the skills and experiences most relevant to the specific job description.'
+            });
+            
+            // ATS optimization
+            recommendations.push({
+                title: 'Optimize for ATS Systems',
+                content: 'Use industry-standard section headings and include keywords from job descriptions to ensure your resume passes through Applicant Tracking Systems.'
+            });
+            
+            // Skills section recommendations
+            if (skills.technical.length < 8 || skills.soft.length < 3) {
+                recommendations.push({
+                    title: 'Create a Dedicated Skills Section',
+                    content: 'Organize your skills into categories (e.g., Technical Skills, Soft Skills, Industry Knowledge) to make them more scannable.'
+                });
+            }
+            
+            // Experience recommendations
+            const actionVerbs = [
+                'achieved', 'improved', 'developed', 'managed', 'created', 'reduced',
+                'implemented', 'led', 'coordinated', 'designed', 'launched', 'built'
+            ];
+            
+            let hasStrongActionVerbs = false;
+            for (const exp of experience) {
+                if (actionVerbs.some(verb => exp.description.toLowerCase().includes(verb))) {
+                    hasStrongActionVerbs = true;
+                    break;
+                }
+            }
+            
+            if (!hasStrongActionVerbs) {
+                recommendations.push({
+                    title: 'Use Strong Action Verbs',
+                    content: 'Begin bullet points with impactful action verbs like "Achieved," "Implemented," or "Led" rather than passive phrases like "Responsible for."'
+                });
+            }
+            
+            // Summary recommendation
+            const hasSummary = text.toLowerCase().includes('summary') || 
+                              text.toLowerCase().includes('objective') || 
+                              text.toLowerCase().includes('profile');
+            
+            if (!hasSummary) {
+                recommendations.push({
+                    title: 'Add a Professional Summary',
+                    content: 'Include a 3-4 sentence professional summary at the top of your resume that highlights your years of experience, key skills, and biggest achievements.'
+                });
+            }
+            
+            // Formatting recommendations
+            recommendations.push({
+                title: 'Keep Design Clean and Professional',
+                content: 'Use consistent formatting with a professional font, clear section headings, and adequate white space for readability.'
+            });
+            
+            // Resume length recommendation
+            const wordCount = text.split(/\s+/).length;
+            if (wordCount > 700) {
+                recommendations.push({
+                    title: 'Aim for One Page if Possible',
+                    content: 'Unless you have 10+ years of experience, try to keep your resume to one page by focusing on the most relevant information.'
+                });
+            }
+            
+            return recommendations;
+        }
+        
+        function displayResults(analysis) {
+            // Set scores
+            overallScore.textContent = analysis.scores.overall;
+            contentScore.textContent = analysis.scores.content;
+            skillsScore.textContent = analysis.scores.skills;
+            experienceScore.textContent = analysis.scores.experience;
+            
+            // Add score classes for color coding
+            [overallScore, contentScore, skillsScore, experienceScore].forEach(element => {
+                const score = parseInt(element.textContent);
+                element.classList.remove('good', 'average', 'poor');
+                
+                if (score >= 80) {
+                    element.classList.add('good');
+                } else if (score >= 60) {
+                    element.classList.add('average');
+                } else {
+                    element.classList.add('poor');
+                }
+            });
+            
+            // Set summary
+            summaryContent.innerHTML = analysis.feedback.summary;
+            
+            // Set strengths
+            strengthsFeedback.innerHTML = '';
+            analysis.feedback.strengths.forEach(strength => {
+                const strengthElem = document.createElement('div');
+                strengthElem.className = 'feedback-item';
+                strengthElem.innerHTML = `
+                    <div class="feedback-title">
+                        <span class="feedback-icon">✅</span>
+                        <span>${strength.title}</span>
+                    </div>
+                    <div class="feedback-content">${strength.content}</div>
+                `;
+                strengthsFeedback.appendChild(strengthElem);
+            });
+            
+            // Set improvements
+            improvementsFeedback.innerHTML = '';
+            analysis.feedback.improvements.forEach(improvement => {
+                const improvementElem = document.createElement('div');
+                improvementElem.className = 'feedback-item';
+                improvementElem.innerHTML = `
+                    <div class="feedback-title">
+                        <span class="feedback-icon">⚠️</span>
+                        <span>${improvement.title}</span>
+                    </div>
+                    <div class="feedback-content">${improvement.content}</div>
+                `;
+                improvementsFeedback.appendChild(improvementElem);
+            });
+            
+            // Set recommendations
+            recommendationsFeedback.innerHTML = '';
+            analysis.feedback.recommendations.forEach(recommendation => {
+                const recommendationElem = document.createElement('div');
+                recommendationElem.className = 'recommendation';
+                recommendationElem.innerHTML = `
+                    <strong>${recommendation.title}</strong>
+                    <p>${recommendation.content}</p>
+                `;
+                recommendationsFeedback.appendChild(recommendationElem);
+            });
+        }
+    </script>
+</body>
+</html>
